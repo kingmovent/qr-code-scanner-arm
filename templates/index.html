@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二维码识别器 - QR Code Scanner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 二维码识别器</h1>
+            <p class="subtitle">支持图片上传和屏幕截图识别</p>
+        </header>
+
+        <main>
+            <!-- 控制面板 -->
+            <div class="control-panel">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="upload">上传图片</button>
+                    <button class="tab-btn" data-tab="screenshot">屏幕截图</button>
+                </div>
+
+                <!-- 上传图片模块 -->
+                <div id="upload-tab" class="tab-content active">
+                    <div class="upload-area" id="drop-zone">
+                        <div class="upload-icon">📁</div>
+                        <p>拖拽图片到这里，或点击选择文件</p>
+                        <div class="upload-buttons">
+                            <input type="file" id="file-input" accept="image/*" hidden>
+                            <button class="btn primary" id="select-file-btn">
+                                📂 选择文件
+                            </button>
+                            <button class="btn secondary" id="paste-btn">
+                                📋 粘贴图片 (Ctrl+V)
+                            </button>
+                        </div>
+                        <p class="paste-hint">💡 截图后按 Ctrl+V 直接粘贴识别</p>
+                        <p class="paste-hint" style="color:#666; font-size:0.85em;">
+                            ⚠️ 如粘贴无效，请使用 <a href="/clipboard-debug" target="_blank">剪贴板调试工具</a>
+                        </p>
+                        <p class="hint">支持 JPG, PNG, BMP, GIF 等格式</p>
+                    </div>
+                </div>
+
+                <!-- 屏幕截图模块 -->
+                <div id="screenshot-tab" class="tab-content">
+                    <div class="screenshot-controls">
+                        <p>点击下方按钮截取整个屏幕并识别二维码</p>
+                        <button class="btn primary" id="capture-btn">
+                            📸 截取屏幕
+                        </button>
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" id="capture-fullscreen" checked>
+                            <label for="capture-fullscreen">截取整个屏幕</label>
+                        </div>
+                        <div class="region-inputs" id="region-inputs" style="display: none;">
+                            <h4>自定义区域</h4>
+                            <div class="input-group">
+                                <label>X 坐标:</label>
+                                <input type="number" id="region-x" value="0" min="0">
+                            </div>
+                            <div class="input-group">
+                                <label>Y 坐标:</label>
+                                <input type="number" id="region-y" value="0" min="0">
+                            </div>
+                            <div class="input-group">
+                                <label>宽度:</label>
+                                <input type="number" id="region-width" value="800" min="1">
+                            </div>
+                            <div class="input-group">
+                                <label>高度:</label>
+                                <input type="number" id="region-height" value="600" min="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 进度提示 -->
+                <div id="loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>正在处理...</p>
+                </div>
+            </div>
+
+            <!-- 结果显示区 -->
+            <div class="results-section">
+                <div class="results-header">
+                    <h2>识别结果</h2>
+                    <button class="btn secondary" id="clear-btn" style="display: none;">清空结果</button>
+                </div>
+                
+                <div id="results-container" class="results-container">
+                    <div class="empty-state" id="empty-state">
+                        <div class="empty-icon">📷</div>
+                        <p>暂无识别结果</p>
+                        <p class="hint">上传图片或截取屏幕开始识别</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 预览区 -->
+            <div class="preview-section" id="preview-section" style="display: none;">
+                <h3>图片预览</h3>
+                <div class="preview-container">
+                    <img id="preview-image" src="" alt="预览图片">
+                    <canvas id="overlay-canvas"></canvas>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>© 2024 二维码识别器 | QR Code Scanner</p>
+        </footer>
+    </div>
+
+    <!-- 提示框 -->
+    <div id="toast" class="toast"></div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

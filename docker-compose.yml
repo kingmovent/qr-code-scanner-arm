@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  qr-scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm/v7  # ARM 32位
+        - linux/arm64   # ARM 64位
+    image: qr-code-scanner:latest
+    container_name: qr_scanner
+    restart: unless-stopped
+    
+    ports:
+      - "5000:5000"
+    
+    volumes:
+      # 持久化上传的文件
+      - ./static/uploads:/app/static/uploads
+      # 日志卷
+      - qr_logs:/app/logs
+    
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    
+    # 资源限制（根据设备调整）
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    
+    # 网络模式，host模式可获得更好性能（可选）
+    # network_mode: "host"
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  qr_logs:

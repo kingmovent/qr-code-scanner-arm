@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>QR测试 - 简单版</title>
+    <style>
+        body { font-family: sans-serif; padding: 30px; max-width: 800px; margin: 0 auto; }
+        .box { border: 3px dashed #007bff; padding: 50px; text-align: center; margin: 30px 0; border-radius: 10px; }
+        .btn { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; }
+        #result { margin-top: 30px; padding: 20px; background: #e7f3ff; border-radius: 8px; }
+        #preview { max-width: 100%; max-height: 400px; margin-top: 20px; }
+        .log { font-size: 12px; color: #666; background: #f5f5f5; padding: 10px; margin-top: 20px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 二维码识别器</h1>
+    
+    <div class="box">
+        <h2>方式1: 选择文件</h2>
+        <input type="file" id="file" accept="image/*" style="width: 300px; padding: 10px; font-size: 16px;">
+        <p><button class="btn" onclick="uploadFile()">上传并识别</button></p>
+    </div>
+    
+    <div class="box" style="border-color: #28a745;">
+        <h2>方式2: 粘贴截图 (推荐)</h2>
+        <p>1. 按 <kbd>Win+Shift+S</kbd> 截图</p>
+        <p>2. 回到本页面，按 <kbd>Ctrl+V</kbd></p>
+        <p>3. 自动识别</p>
+        <p><small>如果Ctrl+V无效，点击下方按钮激活</small></p>
+        <p><button class="btn" onclick="activatePaste()">激活粘贴功能</button></p>
+    </div>
+    
+    <div id="loading" style="display:none; text-align:center; font-size: 20px; margin: 20px 0;">
+        ⏳ 处理中...
+    </div>
+    
+    <div id="preview-section" style="display:none;">
+        <h3>图片预览:</h3>
+        <img id="preview">
+    </div>
+    
+    <div id="result"></div>
+    
+    <div id="status" class="log"></div>
+    
+    <script>
+        const logEl = document.getElementById('status');
+        const resultEl = document.getElementById('result');
+        const previewSec = document.getElementById('preview-section');
+        const previewImg = document.getElementById('preview');
+        const loading = document.getElementById('loading');
+        
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            logEl.textContent += `[${time}] ${msg}\n`;
+            console.log(msg);
+        }
+        
+        function showLoading(show) {
+            loading.style.display = show ? 'block' : 'none';
+        }
+        
+        // ============ 文件上传 ============
+        document.getElementById('file').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) await processFile(file);
+        });
+        
+        function uploadFile() {
+            const fileInput = document.getElementById('file');
+            if (fileInput.files[0]) {
+                processFile(fileInput.files[0]);
+            } else {
+                alert('请先选择文件');
+            }
+        }
+        
+        // ============ 粘贴功能 - 使用传统paste事件 ============
+        function activatePaste() {
+            log('粘贴功能已激活，请按 Ctrl+V');
+            alert('请按 Ctrl+V 粘贴截图，然后查看下方结果');
+        }
+        
+        // 粘贴事件监听（最兼容）
+        document.addEventListener('paste', async (e) => {
+            log('检测到粘贴事件');
+            
+            try {
+                // 方法1: 使用clipboardData（最兼容）
+                const clipboard = e.clipboardData;
+                if (!clipboard) {
+                    log('无clipboardData');
+                    return;
+                }
+                
+                // 检查是否有图片
+                const types = clipboard.types;
+                log('剪贴板类型: ' + (types.length > 0 ? types.join(', ') : '无图片'));
+                
+                let file = null;
+                
+                // 尝试方法A: items.getAsFile()
+                try {
+                    if (clipboard.items && clipboard.items.length > 0) {
+                        for (let item of clipboard.items) {
+                            if (item.type.startsWith('image/')) {
+                                file = item.getAsFile();
+                                if (file && file.size > 0) {
+                                    log('方法1成功: ' + file.size + ' bytes');
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    log('items方法失败: ' + err.message);
+                }
+                
+                // 方法B: getData
+                if (!file) {
+                    try {
+                        for (let fmt of ['image/png', 'image/jpeg']) {
+                            const data = clipboard.getData(fmt);
+                            if (data) {
+                                log('方法2: 通过getData获取' + data.length + ' bytes');
+                                const blob = new Blob([data], { type: fmt });
+                                file = new File([blob], 'paste.png', { type: fmt });
+                                break;
+                            }
+                        }
+                    } catch (err) {
+                        log('getData方法失败: ' + err.message);
+                    }
+                }
+                
+                if (!file) {
+                    log('剪贴板中未找到图片');
+                    return;
+                }
+                
+                e.preventDefault();
+                log('获取到文件: ' + file.name + ' (' + file.size + ' bytes)');
+                await processFile(file);
+                
+            } catch (err) {
+                log('粘贴处理异常: ' + err.message);
+                console.error(err);
+            }
+        }, false);  // 使用false（ bubbling phase）
+        
+        // ============ 处理文件 ============
+        async function processFile(file) {
+            log('处理文件: ' + file.name);
+            showLoading(true);
+            
+            // 预览
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                previewSec.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+            
+            // 上传
+            const formData = new FormData();
+            formData.append('image', file);
+            
+            try {
+                log('发送请求到 /upload...');
+                const res = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await res.json();
+                log('服务器响应: ' + JSON.stringify(data));
+                
+                if (data.success) {
+                    if (data.data.length === 0) {
+                        resultEl.innerHTML = '<p style="color:#f00">⚠️ 未发现二维码</p>';
+                    } else {
+                        resultEl.innerHTML = data.data.map((q, i) => `
+                            <div style="border:2px solid #28a745; padding:15px; margin:10px 0; border-radius:5px;">
+                                <strong>🔢 二维码 #${i+1}</strong><br>
+                                类型: ${q.type}<br>
+                                <strong>内容:</strong><br>
+                                <code style="display:block; background:#fff; padding:10px; margin:5px 0; font-size:14px;">${q.data}</code>
+                                ${q.rect ? '<small>位置: ('+q.rect.left+','+q.rect.top+') 尺寸: '+q.rect.width+'×'+q.rect.height+'</small>' : ''}
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    resultEl.innerHTML = '<p style="color:#f00">❌ ' + data.message + '</p>';
+                }
+            } catch (err) {
+                log('请求失败: ' + err.message);
+                resultEl.innerHTML = '<p style="color:#f00">网络错误: ' + err.message + '</p>';
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // ============ 清空 ============
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'd') {
+                e.preventDefault();
+                log('清空结果');
+                resultEl.innerHTML = '';
+                previewSec.style.display = 'none';
+                logEl.textContent = '';
+            }
+        });
+        
+        log('页面已加载，等待操作...');
+        log('提示: 按 Ctrl+D 清空日志');
+        console.log('Test with window.uploadFile()');
+        window.uploadTest = (file) => processFile(file);
+    </script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二维码识别器 - 测试版</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f2f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .btn { padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 5px; }
+        .primary { background: #007bff; color: white; }
+        .secondary { background: #6c757d; color: white; }
+        .upload-area { border: 3px dashed #ccc; padding: 40px; text-align: center; border-radius: 10px; margin: 20px 0; }
+        .upload-area:hover { border-color: #007bff; background: #f8f9fa; }
+        #file-input { display: none; }
+        .result { background: #e7f3ff; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #007bff; }
+        .toast { position: fixed; top: 20px; right: 20px; background: #333; color: white; padding: 15px 25px; border-radius: 5px; display: none; z-index: 1000; }
+        .toast.show { display: block; }
+        .toast.success { background: #28a745; }
+        .toast.error { background: #dc3545; }
+        .hidden { display: none; }
+        #preview-image { max-width: 100%; max-height: 300px; margin-top: 20px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 二维码识别器 (测试版)</h1>
+        <p>上传包含二维码的图片进行识别</p>
+        
+        <!-- 上传区域 -->
+        <div class="upload-area" id="drop-zone">
+            <p>📁 拖拽图片到这里，或点击下方按钮</p>
+            <input type="file" id="file-input" accept="image/*">
+            <div>
+                <button class="btn primary" id="select-file-btn">📂 选择文件</button>
+                <button class="btn secondary" id="paste-btn">📋 粘贴图片</button>
+            </div>
+            <p style="font-size: 12px; color: #666;">支持 JPG, PNG, BMP, GIF</p>
+        </div>
+        
+        <!-- 加载提示 -->
+        <div id="loading" class="hidden" style="text-align: center; padding: 20px;">
+            <p>⏳ 处理中...</p>
+        </div>
+        
+        <!-- 结果区域 -->
+        <div id="results"></div>
+        
+        <!-- 预览 -->
+        <div id="preview-section" class="hidden">
+            <h3>图片预览</h3>
+            <img id="preview-image" alt="预览">
+        </div>
+    </div>
+    
+    <!-- 提示框 -->
+    <div id="toast" class="toast"></div>
+    
+    <script>
+        // 简化版JavaScript - 最小化测试
+        console.log('Script loaded');
+        
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const selectBtn = document.getElementById('select-file-btn');
+        const pasteBtn = document.getElementById('paste-btn');
+        const loading = document.getElementById('loading');
+        const resultsDiv = document.getElementById('results');
+        const previewSection = document.getElementById('preview-section');
+        const previewImage = document.getElementById('preview-image');
+        const toast = document.getElementById('toast');
+        
+        console.log('Elements:', {dropZone, fileInput, selectBtn, pasteBtn});
+        
+        // 显示提示
+        function showToast(msg, type = 'info') {
+            toast.textContent = msg;
+            toast.className = 'toast show ' + type;
+            setTimeout(() => toast.className = 'toast', 3000);
+        }
+        
+        // 显示加载
+        function showLoading(show) {
+            loading.classList.toggle('hidden', !show);
+        }
+        
+        // 处理文件
+        async function handleFile(file) {
+            console.log('Handling file:', file.name, file.type);
+            
+            if (!file.type.startsWith('image/')) {
+                showToast('请选择图片文件', 'error');
+                return;
+            }
+            
+            showLoading(true);
+            previewSection.classList.remove('hidden');
+            previewImage.src = URL.createObjectURL(file);
+            
+            const formData = new FormData();
+            formData.append('image', file);
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                console.log('Result:', result);
+                
+                if (result.success) {
+                    resultsDiv.innerHTML = '';
+                    if (result.data.length === 0) {
+                        resultsDiv.innerHTML = '<div class="result">未发现二维码</div>';
+                    } else {
+                        result.data.forEach((qr, i) => {
+                            resultsDiv.innerHTML += `
+                                <div class="result">
+                                    <strong>二维码 ${i+1}</strong><br>
+                                    类型: ${qr.type}<br>
+                                    内容: ${qr.data}
+                                </div>
+                            `;
+                        });
+                    }
+                    showToast(`发现 ${result.data.length} 个二维码`, 'success');
+                } else {
+                    showToast(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('请求失败: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // 粘贴功能
+        async function handlePaste(e) {
+            const items = e.clipboardData.items;
+            console.log('Paste event, items:', items.length);
+            
+            for (let item of items) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    showToast('检测到图片，处理中...', 'info');
+                    
+                    const file = item.getAsFile();
+                    console.log('Pasted file:', file);
+                    await handleFile(file);
+                    break;
+                }
+            }
+        }
+        
+        // ============ 事件绑定 ============
+        
+        // 1. 选择文件按钮
+        selectBtn.addEventListener('click', () => {
+            console.log('Select button clicked');
+            fileInput.click();
+        });
+        
+        // 2. 文件输入
+        fileInput.addEventListener('change', (e) => {
+            console.log('File selected:', e.target.files[0]);
+            if (e.target.files[0]) {
+                handleFile(e.target.files[0]);
+            }
+            fileInput.value = '';
+        });
+        
+        // 3. 粘贴按钮
+        pasteBtn.addEventListener('click', () => {
+            console.log('Paste button clicked');
+            showToast('请按 Ctrl+V 粘贴截图', 'info');
+            document.body.focus();
+        });
+        
+        // 4. 全局粘贴
+        document.addEventListener('paste', handlePaste);
+        
+        // 5. 拖拽
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#007bff';
+            dropZone.style.background = '#f8f9fa';
+        });
+        
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#ccc';
+            dropZone.style.background = 'white';
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#ccc';
+            dropZone.style.background = 'white';
+            
+            if (e.dataTransfer.files[0]) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        console.log('All event listeners attached');
+    </script>
+</body>
+</html>

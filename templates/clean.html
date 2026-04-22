@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二维码识别器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
+        header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }
+        header h1 { font-size: 28px; margin-bottom: 5px; }
+        header p { opacity: 0.9; font-size: 14px; }
+        main { padding: 30px; }
+        .upload-box { border: 3px dashed #667eea; border-radius: 12px; padding: 40px 20px; text-align: center; margin-bottom: 20px; transition: all 0.3s; }
+        .upload-box:hover, .upload-box.dragover { border-color: #764ba2; background: #f8f9ff; }
+        .upload-box.paste-active { border-color: #28a745; background: #f0fff4; transform: scale(1.01); }
+        .upload-icon { font-size: 48px; margin-bottom: 10px; }
+        .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; transition: all 0.2s; margin: 5px; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
+        .btn-secondary { background: #e2e8f0; color: #4a5568; }
+        .btn-secondary:hover { background: #cbd5e0; }
+        .btn-copy { background: #28a745; color: white; padding: 8px 16px; font-size: 14px; }
+        .btn-copy:hover { background: #218838; }
+        .btn-copy.copied { background: #6c757d; }
+        #file-input { display: none; }
+        .hint { color: #666; font-size: 13px; margin-top: 15px; }
+        .hint a { color: #667eea; }
+        #loading { display: none; text-align: center; padding: 30px; font-size: 18px; }
+        .spinner { width: 40px; height: 40px; margin: 20px auto; border: 4px solid #e2e8f0; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #result-section { display: none; }
+        .result-card { background: #f8f9ff; border-left: 4px solid #667eea; padding: 20px; margin: 15px 0; border-radius: 8px; }
+        .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .result-type { background: #667eea; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+        .result-data { background: white; padding: 12px; border-radius: 6px; font-family: 'Consolas', monospace; word-break: break-all; font-size: 14px; line-height: 1.6; }
+        .result-data code { display: block; }
+        #preview-section { display: none; margin-top: 20px; text-align: center; }
+        #preview { max-width: 100%; max-height: 400px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        #log { font-size: 12px; color: #666; background: #f8f9fa; padding: 15px; margin-top: 20px; border-radius: 8px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; display: none; }
+        footer { text-align: center; padding: 20px; color: white; opacity: 0.8; font-size: 13px; }
+        .empty { text-align: center; padding: 40px; color: #999; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 二维码识别器</h1>
+            <p>上传图片或粘贴截图，快速识别二维码</p>
+        </header>
+        
+        <main>
+            <!-- 上传区域 -->
+            <div class="upload-box" id="drop-zone">
+                <div class="upload-icon">📁</div>
+                <p><strong>拖拽图片到这里</strong></p>
+                <p>或</p>
+                <input type="file" id="file-input" accept="image/*">
+                <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">选择文件</button>
+                <div style="margin: 15px 0;">
+                    <button class="btn btn-secondary" onclick="activatePaste()">📋 粘贴截图 (Ctrl+V)</button>
+                </div>
+                <p class="hint">
+                    支持 JPG, PNG, BMP, GIF<br>
+                    截图后直接按 <kbd>Ctrl+V</kbd> 即可识别
+                </p>
+            </div>
+            
+            <!-- 加载中 -->
+            <div id="loading">
+                <div class="spinner"></div>
+                <p>⏳ 正在识别...</p>
+            </div>
+            
+            <!-- 预览 -->
+            <div id="preview-section">
+                <h3>📷 图片预览</h3>
+                <img id="preview" alt="预览">
+            </div>
+            
+            <!-- 结果显示 -->
+            <div id="result-section">
+                <h3>📋 识别结果</h3>
+                <div id="results"></div>
+            </div>
+            
+            <!-- 调试日志 -->
+            <div id="log"></div>
+        </main>
+        
+        <footer>
+            二维码识别器 QR Code Scanner
+        </footer>
+    </div>
+
+    <script>
+        const logEl = document.getElementById('log');
+        const resultEl = document.getElementById('results');
+        const previewSec = document.getElementById('preview-section');
+        const previewImg = document.getElementById('preview');
+        const loading = document.getElementById('loading');
+        const resultSection = document.getElementById('result-section');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        
+        // 日志
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            logEl.textContent += `[${time}] ${msg}\n`;
+            console.log(msg);
+            logEl.style.display = 'block';
+        }
+        
+        function clearLog() {
+            logEl.textContent = '';
+        }
+        
+        // 显示加载
+        function showLoading(show) {
+            loading.style.display = show ? 'block' : 'none';
+        }
+        
+        // ============ 文件上传 ============
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) processFile(file);
+            fileInput.value = '';
+        });
+        
+        // 拖拽
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) processFile(file);
+        });
+        
+        // ============ 粘贴功能 ============
+        function activatePaste() {
+            log('✅ 粘贴功能已激活，请按 Ctrl+V');
+            dropZone.focus();
+        }
+        
+        document.addEventListener('paste', async (e) => {
+            log('📋 检测到粘贴事件');
+            
+            try {
+                const clipboard = e.clipboardData || window.clipboardData;
+                if (!clipboard) {
+                    log('❌ 无法访问剪贴板');
+                    return;
+                }
+                
+                // 检查图片
+                let file = null;
+                
+                // 方法1: items.getAsFile()
+                try {
+                    if (clipboard.items) {
+                        for (let item of clipboard.items) {
+                            if (item.type.startsWith('image/')) {
+                                file = item.getAsFile();
+                                if (file && file.size > 0) {
+                                    log('✅ 方法1成功: ' + file.size + ' bytes');
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    log('⚠️ items方法失败: ' + err.message);
+                }
+                
+                // 方法2: getData
+                if (!file && clipboard.getData) {
+                    try {
+                        for (let fmt of ['image/png', 'image/jpeg']) {
+                            const data = clipboard.getData(fmt);
+                            if (data) {
+                                log('✅ 方法2: 通过getData获取');
+                                const blob = new Blob([data], { type: fmt });
+                                file = new File([blob], 'paste.png', { type: fmt });
+                                break;
+                            }
+                        }
+                    } catch (err) {
+                        log('⚠️ getData方法失败: ' + err.message);
+                    }
+                }
+                
+                if (!file) {
+                    log('❌ 剪贴板中没有图片，请先截图');
+                    return;
+                }
+                
+                e.preventDefault();
+                log('✅ 获取图片: ' + file.name + ' (' + file.size + ' bytes)');
+                await processFile(file);
+                
+            } catch (err) {
+                log('❌ 粘贴错误: ' + err.message);
+                console.error(err);
+            }
+        }, false);
+        
+        // ============ 处理文件 ============
+        async function processFile(file) {
+            log('📁 处理文件: ' + file.name + ' (' + formatSize(file.size) + ')');
+            showLoading(true);
+            
+            // 预览
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                previewSec.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+            
+            // 上传
+            const formData = new FormData();
+            formData.append('image', file);
+            
+            try {
+                log('📤 发送请求...');
+                const res = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await res.json();
+                log('📥 响应: ' + (data.success ? '成功' : '失败') + ', ' + data.message);
+                
+                if (data.success) {
+                    displayResults(data.data);
+                } else {
+                    resultEl.innerHTML = '<div class="empty">❌ ' + data.message + '</div>';
+                    resultSection.style.display = 'block';
+                }
+            } catch (err) {
+                log('❌ 网络错误: ' + err.message);
+                resultEl.innerHTML = '<div class="empty">❌ 网络错误: ' + err.message + '</div>';
+                resultSection.style.display = 'block';
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // ============ 显示结果 ============
+        function displayResults(results) {
+            resultSection.style.display = 'block';
+            
+            if (results.length === 0) {
+                resultEl.innerHTML = '<div class="empty">🔍 未发现二维码</div>';
+                return;
+            }
+            
+            resultEl.innerHTML = results.map((qr, i) => `
+                <div class="result-card">
+                    <div class="result-header">
+                        <span class="result-type">${qr.type || 'QRCODE'}</span>
+                        <button class="btn btn-copy" onclick="copyToClipboard(\`${escape(qr.data)}\`, this)">
+                            📋 复制
+                        </button>
+                    </div>
+                    <div class="result-data">
+                        <code>${escape(qr.data)}</code>
+                    </div>
+                    ${qr.rect ? `<div class="hint" style="margin-top:8px;font-size:12px;">
+                        📍 位置: (${qr.rect.left}, ${qr.rect.top}) 尺寸: ${qr.rect.width}×${qr.rect.height}
+                    </div>` : ''}
+                </div>
+            `).join('');
+            
+            log('✅ 识别完成: 发现 ' + results.length + ' 个二维码');
+        }
+        
+        // ============ 复制到剪贴板 ============
+        async function copyToClipboard(text, btn) {
+            try {
+                await navigator.clipboard.writeText(text);
+                log('✅ 已复制到剪贴板: ' + text.substring(0, 30) + '...');
+                
+                const originalText = btn.textContent;
+                btn.textContent = '✓ 已复制';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                log('❌ 复制失败: ' + err.message);
+                // 降级方案
+                fallbackCopy(text, btn);
+            }
+        }
+        
+        // 降级复制方案
+        function fallbackCopy(text, btn) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                btn.textContent = '✓ 已复制';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = '📋 复制';
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (e) {
+                alert('复制失败，请手动复制: ' + text);
+            }
+            document.body.removeChild(textarea);
+        }
+        
+        // ============ 工具函数 ============
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function escape(text) {
+            return text.replace(/[&<>"']/g, m => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[m]));
+        }
+        
+        // ============ 快捷键 ============
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+V 高亮
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                dropZone.classList.add('paste-active');
+                setTimeout(() => dropZone.classList.remove('paste-active'), 300);
+            }
+            // Ctrl+D 清空日志
+            if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+                e.preventDefault();
+                clearLog();
+            }
+        });
+        
+        // 初始化
+        log('✅ 页面已加载，等待操作...');
+        log('💡 提示: 截图后按 Ctrl+V 粘贴');
+        
+        // 调试用
+        window.testUpload = (file) => processFile(file);
+        console.log('开发工具: window.testUpload(file) 可手动测试');
+    </script>
+</body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>剪贴板调试工具</title>
+    <style>
+        body { font-family: Consolas, monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        h1 { color: #569cd6; }
+        .section { margin: 20px 0; padding: 15px; background: #252526; border-radius: 5px; border-left: 3px solid #0e639c; }
+        button { padding: 10px 20px; margin: 5px; background: #0e639c; color: white; border: none; cursor: pointer; border-radius: 3px; }
+        button:hover { background: #1177bb; }
+        #log { white-space: pre-wrap; background: #1e1e1e; padding: 15px; margin-top: 20px; border: 1px solid #3c3c3c; max-height: 400px; overflow-y: auto; font-size: 12px; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .info { color: #dcdcaa; }
+        #preview { max-width: 300px; max-height: 300px; border: 1px solid #3c3c3c; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Windows剪贴板调试工具</h1>
+    
+    <div class="section">
+        <h3>1. 检测剪贴板API</h3>
+        <button onclick="checkAPI()">检测API可用性</button>
+        <button onclick="testRead()">测试读取剪贴板</button>
+        <div id="api-status"></div>
+    </div>
+    
+    <div class="section">
+        <h3>2. 模拟粘贴操作</h3>
+        <p>先截图（Win+Shift+S 或微信截图），然后：</p>
+        <button onclick="simulatePaste()">模拟Ctrl+V</button>
+        <button onclick="directRead()">直接读取剪贴板</button>
+        <div id="paste-result"></div>
+        <img id="preview" style="display:none;">
+    </div>
+    
+    <div class="section">
+        <h3>3. 手动上传测试</h3>
+        <input type="file" id="test-file" accept="image/*" style="display:none">
+        <button onclick="document.getElementById('test-file').click()">选择文件</button>
+        <button onclick="uploadTest()">上传测试</button>
+        <div id="upload-result"></div>
+    </div>
+    
+    <div class="section">
+        <h3>4. 日志输出</h3>
+        <button onclick="clearLog()">清空日志</button>
+        <div id="log"></div>
+    </div>
+    
+    <script>
+        const logEl = document.getElementById('log');
+        const apiStatusEl = document.getElementById('api-status');
+        const pasteResultEl = document.getElementById('paste-result');
+        const uploadResultEl = document.getElementById('upload-result');
+        const previewImg = document.getElementById('preview');
+        
+        function log(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            logEl.textContent += `[${time}] ${prefix} ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(`[${type}]`, msg);
+        }
+        
+        function clearLog() {
+            logEl.textContent = '';
+        }
+        
+        // 1. 检测API
+        function checkAPI() {
+            log('检测剪贴板API...', 'info');
+            
+            const hasClipboard = 'clipboard' in navigator;
+            log('navigator.clipboard: ' + (hasClipboard ? '✓ 可用' : '✗ 不可用'));
+            
+            const hasRead = navigator.clipboard && typeof navigator.clipboard.read === 'function';
+            log('navigator.clipboard.read(): ' + (hasRead ? '✓ 可用' : '✗ 不可用'));
+            
+            const hasReadText = navigator.clipboard && typeof navigator.clipboard.readText === 'function';
+            log('navigator.clipboard.readText(): ' + (hasReadText ? '✓ 可用' : '✗ 不可用'));
+            
+            // 检查旧API
+            const hasDocClipboard = 'clipboardData' in document;
+            log('document.clipboardData (IE/Edge): ' + (hasDocClipboard ? '✓ 可用' : '✗ 不可用'));
+            
+            apiStatusEl.innerHTML = `
+                <p>navigator.clipboard: <span class="${hasClipboard ? 'success' : 'error'}">${hasClipboard}</span></p>
+                <p>navigator.clipboard.read(): <span class="${hasRead ? 'success' : 'error'}">${hasRead}</span></p>
+                <p>document.clipboardData: <span class="${hasDocClipboard ? 'success' : 'error'}">${hasDocClipboard}</span></p>
+            `;
+        }
+        
+        // 2. 测试读取剪贴板（使用navigator.clipboard）
+        async function testRead() {
+            log('尝试读取剪贴板...', 'info');
+            
+            if (!navigator.clipboard) {
+                log('navigator.clipboard 不可用', 'error');
+                return;
+            }
+            
+            try {
+                const permission = await navigator.permissions.query({ name: 'clipboard-read' });
+                log('剪贴板权限状态: ' + permission.state);
+                
+                if (permission.state === 'granted' || permission.state === 'prompt') {
+                    const items = await navigator.clipboard.read();
+                    log('读取到 ' + items.length + ' 个剪贴板项');
+                    
+                    for (let i = 0; i < items.length; i++) {
+                        const item = items[i];
+                        log(`项 ${i+1}:`);
+                        
+                        for (let type of item.types) {
+                            log(`  类型: ${type}`);
+                            
+                            if (type.startsWith('image/')) {
+                                // 使用getType获取blob（正确方式）
+                                try {
+                                    const blob = await item.getType(type);
+                                    log(`  获取成功: ${blob.size} bytes, type: ${blob.type}`);
+                                    
+                                    // 转换为File对象
+                                    const file = new File([blob], 'paste.png', { type: blob.type });
+                                    log(`  文件对象: ${file.name} (${file.size} bytes)`);
+                                    previewImage(file);
+                                    
+                                    // 自动测试上传
+                                    uploadFile(file);
+                                } catch (err) {
+                                    log('  getType失败: ' + err.message, 'error');
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    log('剪贴板权限被拒绝', 'error');
+                }
+            } catch (err) {
+                log('读取失败: ' + err.message, 'error');
+                log('提示: 确保已截图，并点击了页面按钮', 'info');
+            }
+        }
+            
+            try {
+                const permission = await navigator.permissions.query({ name: 'clipboard-read' });
+                log('剪贴板权限状态: ' + permission.state);
+                
+                if (permission.state === 'granted' || permission.state === 'prompt') {
+                    const items = await navigator.clipboard.read();
+                    log('读取到 ' + items.length + ' 个剪贴板项');
+                    
+                    for (let i = 0; i < items.length; i++) {
+                        const item = items[i];
+                        log(`项 ${i+1}:`);
+                        
+                        for (let type of item.types) {
+                            log(`  类型: ${type}`);
+                            
+                            if (type.startsWith('image/')) {
+                                // 使用getType获取blob（正确方式）
+                                try {
+                                    const blob = await item.getType(type);
+                                    log(`  获取成功: ${blob.size} bytes, type: ${blob.type}`);
+                                    
+                                    // 转换为File
+                                    const file = new File([blob], 'paste.png', { type: blob.type });
+                                    log(`  文件对象: ${file.name} (${file.size} bytes)`);
+                                    previewImage(file);
+                                    
+                                    // 自动上传
+                                    uploadFile(file);
+                                } catch (err) {
+                                    log('  getType失败: ' + err.message, 'error');
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    log('剪贴板权限被拒绝', 'error');
+                }
+            } catch (err) {
+                log('读取失败: ' + err.message, 'error');
+                log('提示: 确保已截图，并点击了页面按钮', 'info');
+            }
+        }
+        
+        // 3. 模拟粘贴事件（触发页面上的paste监听器）
+        function simulatePaste() {
+            log('模拟Ctrl+V粘贴事件...', 'info');
+            
+            // 创建伪造的粘贴事件
+            const fakeEvent = new ClipboardEvent('paste', {
+                clipboardData: new DataTransfer()
+            });
+            
+            // 注意：无法伪造真实的剪贴板数据用于测试
+            log('已触发paste事件（但可能无数据）', 'info');
+            document.dispatchEvent(fakeEvent);
+        }
+        
+        // 4. 直接读取并显示（最可靠的方法）
+        async function directRead() {
+            log('=== 直接读取剪贴板 ===', 'info');
+            
+            if (!navigator.clipboard) {
+                log('navigator.clipboard不可用', 'error');
+                return;
+            }
+            
+            try {
+                const items = await navigator.clipboard.read();
+                log('剪贴板项数量: ' + items.length);
+                
+                if (items.length === 0) {
+                    log('剪贴板为空，请先截图', 'error');
+                    return;
+                }
+                
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    log(`项 ${i+1}:`);
+                    
+                    for (let type of item.types) {
+                        log(`  类型: ${type}`);
+                        
+                        if (type.startsWith('image/')) {
+                            const file = item.getAsFile();
+                            log(`  文件: ${file?.name || 'unnamed'} (${file?.size || 0} bytes)`);
+                            previewImage(file);
+                            
+                            // 自动测试上传
+                            log('自动测试上传...');
+                            uploadFile(file);
+                        }
+                    }
+                }
+            } catch (err) {
+                log('错误: ' + err.message, 'error');
+                log('请确保: 1) 已截图 2) 浏览器允许剪贴板权限', 'info');
+            }
+        }
+        
+        // 5. 预览图片
+        function previewImage(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                previewImg.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // 6. 上传测试
+        async function uploadFile(file) {
+            uploadResultEl.innerHTML = '<p>⏳ 上传中...</p>';
+            
+            const formData = new FormData();
+            formData.append('image', file);
+            
+            try {
+                const res = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                uploadResultEl.innerHTML = `
+                    <p class="${data.success ? 'success' : 'error'}">
+                        ${data.success ? '✓' : '✗'} ${data.message}
+                    </p>
+                    ${data.data ? '<pre>' + JSON.stringify(data.data, null, 2) + '</pre>' : ''}
+                `;
+                log('上传结果: ' + data.message, data.success ? 'success' : 'error');
+            } catch (err) {
+                uploadResultEl.innerHTML = '<p class="error">✗ 上传失败: ' + err.message + '</p>';
+                log('上传失败: ' + err.message, 'error');
+            }
+        }
+        
+        // 7. 文件输入测试
+        document.getElementById('test-file').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                log('选择了文件: ' + file.name + ' (' + file.size + ' bytes)');
+                previewImage(file);
+                uploadFile(file);
+            }
+        });
+        
+        // 初始化
+        checkAPI();
+        log('剪贴板调试工具已就绪', 'success');
+        log('操作步骤:', 'info');
+        log('1. 用截图工具截一张图', 'info');
+        log('2. 点击"直接读取剪贴板"', 'info');
+        log('3. 查看是否能识别二维码', 'info');
+    </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+[Unit]
+Description=QR Code Scanner Service
+Documentation=https://github.com/your-repo/qr-code-scanner
+After=network.target
+
+[Service]
+Type=simple
+User=qruser
+Group=qruser
+WorkingDirectory=/opt/qr-code-scanner
+ExecStart=/usr/bin/python3 /opt/qr-code-scanner/app.py
+Restart=always
+RestartSec=10
+
+# 安全加固
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/qr-code-scanner/static/uploads
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# 资源限制
+MemoryLimit=512M
+CPUQuota=80%
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qr-scanner
+
+[Install]
+WantedBy=multi-user.target

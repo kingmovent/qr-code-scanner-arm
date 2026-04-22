@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>QR测试</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .box { border: 3px dashed #ccc; padding: 40px; text-align: center; margin: 20px; }
+        .box:hover { border-color: #007bff; }
+        #result { margin-top: 20px; padding: 15px; background: #e7f3ff; border-radius: 5px; }
+        #preview { max-width: 300px; margin-top: 20px; }
+        .btn { padding: 10px 20px; margin: 5px; }
+        .primary { background: #007bff; color: white; border: none; cursor: pointer; }
+        .secondary { background: #6c757d; color: white; border: none; cursor: pointer; }
+        #log { font-size: 12px; color: #666; margin-top: 20px; white-space: pre-wrap; background: #f5f5f5; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 二维码测试版</h1>
+    
+    <div class="box" id="drop-zone">
+        <p>📁 拖拽图片到这里</p>
+        <p>或</p>
+        <input type="file" id="file-input" accept="image/*" style="display:none">
+        <button class="btn primary" id="select-btn">选择文件</button>
+        <button class="btn secondary" id="paste-btn">粘贴 (Ctrl+V)</button>
+        <button class="btn secondary" id="debug-paste-btn">调试: 查看剪贴板</button>
+    </div>
+    
+    <div id="loading" style="display:none; text-align:center;">⏳ 处理中...</div>
+    
+    <div id="preview-section" style="display:none;">
+        <h3>预览</h3>
+        <img id="preview" />
+    </div>
+    
+    <div id="result"></div>
+    
+    <div id="log"></div>
+    
+    <script>
+        const logEl = document.getElementById('log');
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            logEl.textContent += `[${time}] ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(msg);
+        }
+        
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const selectBtn = document.getElementById('select-btn');
+        const pasteBtn = document.getElementById('paste-btn');
+        const loading = document.getElementById('loading');
+        const previewSec = document.getElementById('preview-section');
+        const previewImg = document.getElementById('preview');
+        const resultDiv = document.getElementById('result');
+        
+        log('页面加载完成');
+        
+        // 1. 选择文件按钮
+        selectBtn.addEventListener('click', () => {
+            log('点击选择按钮');
+            fileInput.click();
+        });
+        
+        // 2. 文件输入
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files[0];
+            if (file) {
+                log('选择了文件: ' + file.name);
+                processFile(file);
+            }
+            fileInput.value = '';
+        });
+        
+        // 3. 拖拽
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#007bff';
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = '#ccc';
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#ccc';
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                log('拖拽文件: ' + file.name);
+                processFile(file);
+            }
+        });
+        
+        // 4. 粘贴 - Windows安全版本
+        pasteBtn.addEventListener('click', () => {
+            log('点击粘贴按钮，请按Ctrl+V');
+            document.body.focus();
+        });
+        
+        document.addEventListener('paste', async (e) => {
+            log('检测到粘贴事件');
+            const clipboard = e.clipboardData;
+            if (!clipboard) return;
+            
+            // 检查是否有图片
+            let hasImage = false;
+            for (let i = 0; i < clipboard.types.length; i++) {
+                if (clipboard.types[i].startsWith('image/')) {
+                    hasImage = true;
+                    break;
+                }
+            }
+            
+            if (!hasImage) {
+                log('剪贴板中没有图片');
+                return;
+            }
+            
+            e.preventDefault();
+            loading.style.display = 'block';
+            log('发现图片，处理中...');
+            
+            try {
+                const file = await getImageFromClipboard(clipboard);
+                if (file) {
+                    log('获取图片成功: ' + file.name + ' (' + file.size + ' bytes)');
+                    await processFile(file);
+                } else {
+                    log('未能提取图片', 'error');
+                }
+            } catch (err) {
+                log('处理失败: ' + err.message, 'error');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }, { passive: false });
+        
+        async function getImageFromClipboard(clipboard) {
+            // 方法1: items.getAsFile()
+            try {
+                if (clipboard.items && clipboard.items.length > 0) {
+                    const item = clipboard.items[0];
+                    if (item.type.startsWith('image/')) {
+                        const file = item.getAsFile();
+                        if (file && file.size > 0) {
+                            return file;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('items 方法失败:', err);
+            }
+            
+            // 方法2: getData
+            try {
+                for (const fmt of ['image/png', 'image/jpeg', 'image/jpg']) {
+                    const data = clipboard.getData(fmt);
+                    if (data) {
+                        const blob = new Blob([data], { type: fmt });
+                        return new File([blob], 'paste.png', { type: fmt });
+                    }
+                }
+            } catch (err) {
+                console.warn('getData 方法失败:', err);
+            }
+            
+            return null;
+        }
+                
+                // 快速检查类型（只检查前3个）
+                const types = clipboard.types;
+                let hasImage = false;
+                for (let i = 0; i < Math.min(types.length, 3); i++) {
+                    if (types[i].startsWith('image/')) {
+                        hasImage = true;
+                        break;
+                    }
+                }
+                
+                if (!hasImage) {
+                    log('剪贴板中无图片');
+                    return;
+                }
+                
+                e.preventDefault();
+                log('发现剪贴板图片，处理中...');
+                loading.style.display = 'block';
+                
+                // 使用异步获取，避免阻塞
+                setTimeout(async () => {
+                    try {
+                        const file = await getImageFromClipboard(clipboard);
+                        if (file) {
+                            log('剪贴板图片获取成功: ' + file.size + ' bytes');
+                            await processFile(file);
+                        } else {
+                            log('未能从剪贴板获取图片');
+                        }
+                    } catch (err) {
+                        log('剪贴板处理错误: ' + err.message);
+                    } finally {
+                        loading.style.display = 'none';
+                    }
+                }, 10);
+                
+            } catch (err) {
+                log('粘贴事件处理异常: ' + err.message);
+            }
+        }, { passive: false });
+        
+        async function getImageFromClipboard(clipboard) {
+            return new Promise((resolve) => {
+                try {
+                    // 尝试方法1: items
+                    if (clipboard.items && clipboard.items.length > 0) {
+                        const item = clipboard.items[0];
+                        if (item.type.startsWith('image/')) {
+                            const file = item.getAsFile();
+                            if (file) return resolve(file);
+                        }
+                    }
+                    
+                    // 尝试方法2: getData
+                    const types = ['image/png', 'image/jpeg', 'image/jpg'];
+                    for (const type of types) {
+                        try {
+                            const data = clipboard.getData(type);
+                            if (data) {
+                                const blob = new Blob([data], { type });
+                                const file = new File([blob], 'paste.png', { type });
+                                return resolve(file);
+                            }
+                        } catch (e) {
+                            // 忽略
+                        }
+                    }
+                    
+                    resolve(null);
+                } catch (e) {
+                    log('获取剪贴板图片失败: ' + e.message);
+                    resolve(null);
+                }
+            });
+        }
+        
+        // 5. 处理文件（上传+预览）
+        async function processFile(file) {
+            loading.style.display = 'block';
+            previewImg.src = URL.createObjectURL(file);
+            previewSec.style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('image', file);
+            
+            try {
+                log('正在上传...');
+                const res = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await res.json();
+                log('服务器响应: ' + JSON.stringify(data));
+                
+                if (data.success) {
+                    if (data.data.length === 0) {
+                        resultDiv.innerHTML = '<p style="color:#f00">未发现二维码</p>';
+                    } else {
+                        resultDiv.innerHTML = data.data.map((q, i) => 
+                            `<div style="border:1px solid #007bff; padding:10px; margin:5px 0;">
+                                <strong>#${i+1}</strong><br>
+                                类型: ${q.type}<br>
+                                内容: ${q.data}
+                            </div>`
+                        ).join('');
+                    }
+                } else {
+                    resultDiv.innerHTML = '<p style="color:#f00">错误: ' + data.message + '</p>';
+                }
+            } catch (err) {
+                log('请求失败: ' + err.message);
+                resultDiv.innerHTML = '<p style="color:#f00">请求失败: ' + err.message + '</p>';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+        
+        // 6. 控制台调试
+        log('所有事件监听器已注册');
+        window.test = { processFile, log };
+        console.log('Test mode: window.test.processFile(file)');
+        
+        // 调试剪贴板
+        document.getElementById('debug-paste-btn').addEventListener('click', async () => {
+            log('=== 剪贴板调试 ===');
+            
+            if (!navigator.clipboard) {
+                log('navigator.clipboard 不可用', 'error');
+                return;
+            }
+            
+            try {
+                const permission = await navigator.permissions.query({ name: 'clipboard-read' });
+                log('权限状态: ' + permission.state);
+                
+                const items = await navigator.clipboard.read();
+                log('剪贴板项数: ' + items.length);
+                
+                for (let item of items) {
+                    log('类型: ' + item.types.join(', '));
+                    for (let type of item.types) {
+                        if (type.startsWith('image/')) {
+                            try {
+                                const blob = await item.getType(type);
+                                log('图片: ' + blob.size + ' bytes, ' + blob.type);
+                                const file = new File([blob], 'debug.png', { type: blob.type });
+                                log('File对象创建成功');
+                                // 预览
+                                const reader = new FileReader();
+                                reader.onload = e => {
+                                    previewImg.src = e.target.result;
+                                    previewImg.style.display = 'block';
+                                };
+                                reader.readAsDataURL(file);
+                            } catch (err) {
+                                log('getType失败: ' + err.message, 'error');
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                log('错误: ' + err.message, 'error');
+            }
+        });
+    </script>
+</body>
+</html>

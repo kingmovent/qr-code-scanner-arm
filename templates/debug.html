@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>调试页面</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        .test { margin: 10px 0; padding: 10px; background: #2d2d2d; border-radius: 4px; }
+        .pass { color: #4ec9b0; }
+        .fail { color: #f48771; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        #log { white-space: pre-wrap; background: #1e1e1e; padding: 10px; margin-top: 20px; border: 1px solid #3c3c3c; max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 二维码扫描器 - 调试模式</h1>
+    
+    <div class="test">
+        <h3>1. DOM 元素检查</h3>
+        <div id="dom-check"></div>
+    </div>
+    
+    <div class="test">
+        <h3>2. JavaScript 语法检查</h3>
+        <button onclick="testSyntax()">测试语法</button>
+        <div id="syntax-result"></div>
+    </div>
+    
+    <div class="test">
+        <h3>3. 事件绑定测试</h3>
+        <button onclick="testEvents()">测试点击事件</button>
+        <div id="event-result"></div>
+    </div>
+    
+    <div class="test">
+        <h3>4. API连接测试</h3>
+        <button onclick="testAPI()">测试 /health</button>
+        <button onclick="testUpload()">测试上传</button>
+        <div id="api-result"></div>
+    </div>
+    
+    <div class="test">
+        <h3>5. 粘贴功能测试</h3>
+        <p>截图一张二维码图片，然后按 Ctrl+V</p>
+        <input type="file" id="debug-file" accept="image/*" style="display:none">
+        <button onclick="document.getElementById('debug-file').click()">选择文件测试</button>
+        <button onclick="testPaste()">模拟粘贴</button>
+        <div id="paste-result"></div>
+    </div>
+    
+    <div id="log"></div>
+    
+    <script>
+        const logEl = document.getElementById('log');
+        function log(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            logEl.textContent += `[${time}] ${prefix} ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        // 1. DOM元素检查
+        function checkDOM() {
+            const ids = ['drop-zone', 'file-input', 'select-file-btn', 'paste-btn', 'capture-btn', 'toast', 'preview-image'];
+            const results = [];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    results.push(`<span class="pass">✓</span> ${id}: ${el.tagName}`);
+                } else {
+                    results.push(`<span class="fail">✗</span> ${id}: 未找到`);
+                }
+            });
+            document.getElementById('dom-check').innerHTML = results.join('<br>');
+        }
+        
+        // 2. 语法测试
+        function testSyntax() {
+            try {
+                eval('const a = 1; function test() { return a; }');
+                document.getElementById('syntax-result').innerHTML = '<span class="pass">✓ JavaScript语法正常</span>';
+                log('语法检查通过');
+            } catch (e) {
+                document.getElementById('syntax-result').innerHTML = '<span class="fail">✗ 语法错误: ' + e.message + '</span>';
+                log('语法错误: ' + e.message, 'error');
+            }
+        }
+        
+        // 3. 事件绑定测试
+        function testEvents() {
+            const btn = document.getElementById('select-file-btn');
+            if (btn) {
+                // 临时添加点击监听
+                btn.addEventListener('click', () => {
+                    document.getElementById('event-result').innerHTML = '<span class="pass">✓ 按钮点击事件触发成功</span>';
+                    log('按钮点击事件工作正常');
+                });
+                btn.click();
+            } else {
+                document.getElementById('event-result').innerHTML = '<span class="fail">✗ 未找到按钮元素</span>';
+            }
+        }
+        
+        // 4. API测试
+        async function testAPI() {
+            try {
+                const res = await fetch('/health');
+                const data = await res.json();
+                document.getElementById('api-result').innerHTML = 
+                    `<span class="pass">✓ API正常: ${JSON.stringify(data)}</span>`;
+                log('API连接成功: ' + JSON.stringify(data), 'success');
+            } catch (e) {
+                document.getElementById('api-result').innerHTML = 
+                    `<span class="fail">✗ API连接失败: ${e.message}</span>`;
+                log('API连接失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function testUpload() {
+            // 创建一个测试图片（1x1像素PNG）
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'red';
+            ctx.fillRect(0, 0, 100, 100);
+            // 添加一个简单的二维码图案
+            ctx.fillStyle = 'white';
+            ctx.fillRect(30, 30, 40, 40);
+            ctx.fillStyle = 'black';
+            ctx.font = '10px Arial';
+            ctx.fillText('TEST', 35, 55);
+            
+            canvas.toBlob(async (blob) => {
+                const file = new File([blob], 'test.png', { type: 'image/png' });
+                const formData = new FormData();
+                formData.append('image', file);
+                
+                try {
+                    const res = await fetch('/upload', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    document.getElementById('api-result').innerHTML = 
+                        `<span class="${data.success ? 'pass' : 'fail'}">✓ 上传${data.success ? '成功' : '失败'}: ${data.message}</span>`;
+                    log('上传测试: ' + JSON.stringify(data), data.success ? 'success' : 'error');
+                } catch (e) {
+                    document.getElementById('api-result').innerHTML = 
+                        `<span class="fail">✗ 上传错误: ${e.message}</span>`;
+                    log('上传错误: ' + e.message, 'error');
+                }
+            });
+        }
+        
+        // 5. 粘贴测试
+        function testPaste() {
+            // 模拟粘贴事件
+            const fakeEvent = new ClipboardEvent('paste', {
+                clipboardData: new DataTransfer()
+            });
+            // 添加一个测试图片到剪贴板（通过临时canvas）
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(0, 0, 100, 100);
+            
+            canvas.toBlob(blob => {
+                const item = new ClipboardItem({ 'image/png': blob });
+                fakeEvent.clipboardData.items.add(item);
+                document.dispatchEvent(fakeEvent);
+                log('已触发模拟粘贴事件');
+            });
+        }
+        
+        // 文件输入监听（用于粘贴测试）
+        document.getElementById('debug-file').addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                log('选择了文件: ' + e.target.files[0].name);
+            }
+        });
+        
+        // 页面加载后自动检查
+        window.addEventListener('load', () => {
+            log('调试页面已加载');
+            checkDOM();
+            testSyntax();
+        });
+    </script>
+</body>
+</html>
