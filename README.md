@@ -8,7 +8,6 @@ A lightweight web-based QR code scanner that recognizes QR codes from uploaded i
 
 - **📁 Image Upload**: Drag & drop or click to upload images
 - **📋 Paste from Clipboard**: Directly paste screenshots (Win+Shift+S → Ctrl+V)
-- **📸 Screenshot Capture**: Capture screen directly (Linux/X11 only)
 - **🎯 One-Click Copy**: Copy decoded QR content with a single click
 - **🎨 Clean & Simple UI**: Minimalist design, focused on core functionality
 - **⚡ Fast & Lightweight**: Pure Python + minimal dependencies
@@ -85,11 +84,6 @@ Visit: **http://localhost:5000**
 3. Switch to browser, ensure the upload area is focused
 4. Press `Ctrl+V`
 5. QR content is automatically decoded and displayed
-
-### Method 3: Capture Screen (Linux/X11 only)
-1. Switch to **"Screenshot Capture"** tab (if enabled)
-2. Click **"Capture Screen"**
-3. The full screen or selected region is captured and decoded
 
 ---
 
